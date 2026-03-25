@@ -1,3 +1,9 @@
+---
+name: resume
+description: Resume Review & Creation — review and revamp an existing resume or create one from scratch
+user-invocable: true
+---
+
 # /resume — Resume Review & Creation
 
 Usage:
