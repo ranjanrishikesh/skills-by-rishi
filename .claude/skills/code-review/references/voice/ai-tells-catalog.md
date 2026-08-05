@@ -1,16 +1,26 @@
-# agentclaw — AI Writing Tells Catalog
+# AI Writing Tells Catalog
 
-The detect-and-rewrite reference for the Voice dimension of `/code-review` and its rewriting pass. Built 2026-07-13 from a 7-angle web + prior-art research fan-out (88 raw patterns) synthesized to the 46 below. Pair this with the voice target in `voice-and-tone.md`: this file is *what to catch and how to fix it*; that file is *the voice to fix toward* (bold, provocative, first-person Rishikesh, dry humor, occasional mild swear, never mellow).
+The detect-and-rewrite reference for the Voice dimension and its rewriting pass. Built from a 7-angle web and prior-art research fan-out (88 raw patterns) synthesized to the entries below.
+
+**This file is half of a pair.** It is *what to catch*. The other half is *what to fix toward*, and that is your repository's own voice spec, named by `repoFacts.voiceSpec` in `review.config.json`. This catalog cannot supply it, because "reads like a machine" is close to universal while "reads like us" is not.
+
+### A note on the examples
+
+Every entry carries a worked before-and-after. Those rewrites were written for one particular voice: bold, first-person, dry, deliberately unpolished. **Read them for the move, not the register.** The lesson in each is what the rewrite *does* to the sentence, which transfers everywhere. The tone it lands in is one repo's answer and may be wrong for yours. Where the example's register and your voice spec disagree, your spec wins; the entry's detection rule and rewrite rule still hold.
+
+If your repo's voice is genuinely formal, most of these still apply. Formal is not the same as machine-shaped, and almost nothing in here is a tell only because it is polite.
 
 ## How to read severity
 
-- **hard_ban** — must never ship. Em-dash and curly quotes are also enforced by the deterministic pre-publish gate.
+- **hard_ban** — must never ship. Typically also enforced by the deterministic pre-publish gate.
 - **strong** — almost always an AI tell; remove unless there is a specific reason.
-- **contextual** — a tell only when mechanical, stacked, or reflexive. Real founder writing uses some of these well. **Keep the good ones, dissolve the mechanical ones.** Over-correcting these is the #1 way to flatten the voice.
+- **contextual** — a tell only when mechanical, stacked, or reflexive. Real writing uses some of these well. **Keep the good ones, dissolve the mechanical ones.** Over-correcting these is the number one way to flatten a voice into something blander than what you started with.
 
 ## What the gate blocks vs. what you judge
 
-The deterministic gate (`.claude/hooks/ai-tells-lint.json`) blocks only three things with near-zero false positives: **em-dash (U+2014)**, **spaced `--`**, and **curly quotes in `content/`**. It deliberately does NOT block en-dash (legit numeric ranges like `9-5`), decorative-emoji glyphs (the `✓` in terminal readouts is legit), or any rhetorical/lexical pattern below. Those are yours to judge and fix during the rewrite.
+The deterministic gate is configured by `publishGate.rules`. The shipped ruleset blocks three things with near-zero false positives: **em-dash (U+2014)**, **spaced `--`**, and **curly quotes**. It deliberately does NOT block the en-dash (legitimate numeric ranges like `9-5`), decorative-emoji glyphs (a `✓` in a terminal readout is legitimate), or any rhetorical or lexical pattern below. Those are yours to judge and fix during the rewrite.
+
+**Check the actual rules file rather than trusting this paragraph.** A repo may have deleted a rule, added one, or narrowed one to specific directories with a `dirs` key. Anything the gate does not block is yours to catch, and anything it does block is duplication if you report it.
 
 ---
 

@@ -46,24 +46,28 @@ A Critical finding with one obvious correct fix is safer to apply automatically 
 
 ## Who fixes what
 
-Every **CRITICAL and HIGH** finding is fixed **by Opus 5, in the same pass, and is not re-reviewed**. Low and Minor are reported with a recommendation instead. Severity decides what gets fixed; the fix class decides how much the fixer has to explain itself.
+Every **CRITICAL and HIGH** finding is fixed **by the strong tier, in the same pass, and is not re-reviewed**. Low and Minor are reported with a recommendation instead. Severity decides what gets fixed; the fix class decides how much the fixer has to explain itself.
+
+"Strong tier" means the most capable model the host offers, resolved through `models.fix` and `modelIds` in `review.config.json`. The tier is the contract here, not any particular model name: the reason fixes are trusted without a second reading is that they were applied by a stronger model than the one that found them, and that relationship has to survive every model release.
 
 | | Mechanical | Constrained | Judgment |
 |---|---|---|---|
-| **Critical** | Opus fixes | Opus fixes, states the choice | Opus fixes, states the choice |
-| **High** | Opus fixes | Opus fixes, states the choice | Opus fixes, states the choice |
+| **Critical** | Strong fixes | Strong fixes, states the choice | Strong fixes, states the choice |
+| **High** | Strong fixes | Strong fixes, states the choice | Strong fixes, states the choice |
 | **Low** | Report + recommend | Report + recommend | Report + recommend |
 | **Minor** | Report + recommend | Report + recommend | Report + recommend |
 
 A recommendation is not "consider fixing this". It names the specific edit, at the file and line, and says whether to take it. "Delete the local `slugify()` and import `slugifyHeading` from `@/lib/utils`; byte-identical today, and this is the drift class that produced finding 4. Take it." A reader must be able to approve or veto without opening the file.
 
-**Except: factual claims about pricing, dates, clients, team size, or anything only the founder can know. Those always stop and ask, at every tier, including Critical.**
+**Except: factual claims that only the repo's owner can settle. Those always stop and ask, at every tier, including Critical.**
 
-That exception is about authority, not capability. A stronger model does not know what agentclaw charges or which clients exist, and a confident wrong number on a live page costs more than any defect this review catches. Everything else, including judgment calls about abstraction, naming, structure and taste, is Opus's to make.
+Concretely, that means prices, dates, headcount, client and customer names, contractual terms, legal statements, security commitments, published metrics, and anything else whose truth lives outside the repository. `repoFacts.sourcesOfRecord` in `review.config.json` names the files that hold the ones this repo has written down; a claim traceable to one of those is checkable and is not an escalation. A claim traceable to nothing is.
+
+That exception is about authority, not capability. A stronger model does not know what this company charges or which customers exist, and a confident wrong number on a live page costs more than any defect this review catches. Everything else, including judgment calls about abstraction, naming, structure and taste, is the fixing model's to make.
 
 ## Rules for anything fixed
 
-1. **Re-run the deterministic gate afterwards.** `pnpm typecheck && pnpm lint && pnpm build`. Not a re-review: deterministic, zero false positives, seconds. A fix that breaks the build is worse than the finding it closed.
+1. **Re-run the deterministic gate afterwards.** Every step in `gate` in `review.config.json`, in order. Not a re-review: deterministic, zero false positives, and usually seconds. A fix that breaks the build is worse than the finding it closed. If the repo declares no gate, say so rather than implying one ran.
 2. **List every fix.** Trusted is not the same as invisible. The reader is entitled to see what was rewritten.
 3. **Never delete a guard, a check or a test** to make a finding go away.
 4. **Stop at scale, counting only what you fix, and counting decisions rather than files.** The cap is **10 CRITICAL and HIGH findings**. Low and Minor are reported rather than fixed, so they never consume it.
@@ -72,4 +76,4 @@ That exception is about authority, not capability. A stronger model does not kno
 
    If the Critical and High set still exceeds 10: **fix every CRITICAL regardless**, then report the High ones with their recommendations and say which were deferred and why. A Critical is never carried for being inconvenient to reach.
 
-   Two incidents produced this wording, both on 2026-08-02. First, the original rule counted every tier, so a review with 7 findings across ~17 files tripped its cap on the strength of the Low and Minor entries and fixed **nothing** , including a Critical that made the footer's Privacy and Terms links unclickable on every page. Second, the replacement still counted raw files, which would have deferred five High findings because one of them swapped a single constant at twelve call sites. A scale guard that lets polish findings veto a Critical fix, or lets a find-and-replace exhaust the budget, is worse than no guard.
+   Two real incidents produced this wording, in the repository this skill was extracted from. First, the original rule counted every tier, so a review with 7 findings across ~17 files tripped its cap on the strength of the Low and Minor entries and fixed **nothing**, including a Critical that made the footer's Privacy and Terms links unclickable on every page. Second, the replacement still counted raw files, which would have deferred five High findings because one of them swapped a single constant at twelve call sites. A scale guard that lets polish findings veto a Critical fix, or lets a find-and-replace exhaust the budget, is worse than no guard.

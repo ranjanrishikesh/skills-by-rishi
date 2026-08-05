@@ -108,10 +108,24 @@ export const DEFAULTS = {
     'keyword-contract': false,
   },
   repoFacts: {
+    // Agent instruction files, whichever agent wrote them. All of them bind.
     instructionFiles: [],
+    // Files holding facts the Truth dimension can check a claim against:
+    // pricing, headcount, dates, customers. Empty means untraceable claims are
+    // reported at Low rather than High, because you cannot hold copy to a
+    // standard nobody wrote down.
     sourcesOfRecord: [],
+    // Changed-file to URL mapping, for the dimensions that render pages.
     routeMap: null,
+    // The repo's binding voice spec. Null switches the Voice dimension off:
+    // a voice reviewer with no spec corrects toward whatever register the model
+    // defaults to, which is the thing that dimension exists to catch.
     voiceSpec: null,
+    // The deliberate list of search terms this product competes for. Null
+    // switches the Keyword contract dimension off, for the same class of
+    // reason: with no list it would infer a target from the page and then
+    // confirm the page matches it.
+    keywordList: null,
   },
   dev: null,                     // { run, url } or null
   publishGate: {
@@ -217,6 +231,15 @@ export function validate(raw) {
     }
     if ('sourcesOfRecord' in f && !isStrArray(f.sourcesOfRecord)) {
       at('repoFacts.sourcesOfRecord', 'must be an array of paths');
+    }
+    // These three are each a path or null, and null is meaningful: it switches
+    // the dimension that depends on it off. A typo that lands as `false` or `0`
+    // would read as null downstream and silently disable a dimension somebody
+    // meant to enable, which is the failure the rubric refuses to allow.
+    for (const key of ['routeMap', 'voiceSpec', 'keywordList']) {
+      if (key in f && f[key] !== null && !isStr(f[key])) {
+        at(`repoFacts.${key}`, 'must be a path string, or null to switch off the dimension that uses it');
+      }
     }
   }
 

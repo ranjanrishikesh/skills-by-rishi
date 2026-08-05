@@ -22,11 +22,15 @@ So: be absolute about values, and be a careful thinker about components. A revie
 
 **Step 1. Build the inventory before you judge anything.** You cannot say "this already exists" without knowing what exists. Do this first, every run.
 
-- `components/` in full: list every exported component, its props, and its variants. Note `components/blocks/` particularly, since those are the renderers the content JSON drives.
-- `app/globals.css`: read the `@theme` block and the header comment. The palette, the type scale, the spacing steps, and the **measured contrast floors** live there. Those floors were measured; CLAUDE.md requires re-measuring before changing them, so treat them as fixed.
-- `lib/config.ts`: the constants of record.
-- `lib/content/types.ts`: the Zod union of block types. This is the checkpoint for new block kinds.
-- `lib/` utilities and shared types.
+Use `classes` in `review.config.json` to find each of these; the paths differ per repo and the categories do not.
+
+- **Every `UI-CODE` directory in full**: list every exported component, its props, and its variants. Pay particular attention to any directory of renderers that data drives, because that is where a "new" component is most often a duplicate of an existing one under another name.
+- **The style tokens.** Wherever the design tokens live: a theme block, a tokens file, a variables stylesheet, a Tailwind config. Read its header comment too. Palettes, type scales, spacing steps and any **measured contrast floors** live there. Measured floors are fixed values, not suggestions; if an instruction file requires re-measuring before changing them, treat them as immovable.
+- **The constants of record.** The module other modules import their shared values from.
+- **The shared type and schema definitions.** Any discriminated union or schema registry is the checkpoint for a new variant of an existing kind.
+- **The `LOGIC` utilities.** The functions someone has already written that do what the change is about to write again.
+
+If a repo has none of these, say so. "No shared inventory exists yet" is a real and useful finding on a young codebase, and it changes what the rest of this brief can ask for.
 
 **Step 2. Extract what the change introduces.** Every new component, block type, style value, constant, type, schema, and utility.
 
@@ -35,7 +39,7 @@ So: be absolute about values, and be a careful thinker about components. A revie
 **Step 4. Decide, and say which of these you concluded:**
 
 - **Exact match exists** → the new code must be deleted and the existing one used. Finding.
-- **Near match exists** → the existing component must be extended to cover this case. Finding, with the extension named. This repo has `class-variance-authority` as a dependency, so the intended mechanism is a **new variant on the existing component**, not a new file and not another boolean prop.
+- **Near match exists** → the existing component must be extended to cover this case. Finding, with the extension named. **Name the mechanism this repo actually uses** for that, taken from the inventory: a variants library if one is a dependency, an existing variant prop, a composition pattern the codebase already repeats. A new file, or another boolean prop, is what you are arguing against.
 - **No match, and this is the first or second instance of the pattern** → accept it. Say so. Note the pattern for later.
 - **No match, but this is the third instance** → extraction is now due. Finding.
 
@@ -50,7 +54,7 @@ Flag every one of these appearing as a literal in a component, a style, or conte
 - A `box-shadow` written by hand
 - A `z-index` number not drawn from a defined layer
 - A media query breakpoint written as a raw pixel value
-- An animation `duration` or easing curve written inline, when this repo runs gsap, lenis and motion and those belong in one place
+- An animation `duration` or easing curve written inline. Where a repo runs an animation library at all, these belong in one place, and scattering them is how two elements that should move together stop doing so.
 
 For each, name the existing token that should have been used. If **no** token exists for it, that is still a finding, and the fix is to create the token rather than to allow the literal. That is the difference between a codebase with a design system and one with a folder of components.
 
@@ -58,11 +62,11 @@ For each, name the existing token that should have been used. If **no** token ex
 
 Duplication is not only visual. Check for a second copy of:
 
-- A Zod schema or a TypeScript type that describes something already described in `lib/content/types.ts`
-- A constant that belongs in `lib/config.ts` and has been re-declared locally
-- A utility function that already exists in `lib/`
-- A copy string repeated across content files that should be one source
-- A **block type** added to the Zod union that renders what an existing block already renders. This is the FAQ case in this repo's own terms, and the union is where it gets caught.
+- A schema or a type that describes something the shared type module already describes
+- A constant that belongs in the constants-of-record module and has been re-declared locally
+- A utility function that already exists among the shared utilities
+- A string repeated across content files that should have one source
+- A **new member of a discriminated union or schema registry** that renders or represents what an existing member already does. The union is the checkpoint: a fifth hand-rolled FAQ section is easy to miss in a directory listing and impossible to miss in the union it had to be added to.
 
 ## The counter-checks
 

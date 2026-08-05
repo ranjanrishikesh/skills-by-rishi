@@ -14,9 +14,9 @@ You are also not the accessibility reviewer. Lighthouse reports an accessibility
 
 ## How to run it
 
-1. Identify changed content files, metadata definitions, and SEO infrastructure: `app/sitemap.ts`, `app/robots.ts`, `app/layout.tsx`, `components/seo/json-ld.tsx`, and any `metadata` or `generateMetadata` export.
-2. Map changed content to URLs using `references/routes.md`.
-3. Read the **generated** metadata, not just the JSON source, since page metadata is assembled in the route handler.
+1. Identify changed content files, metadata definitions, and SEO infrastructure. The `SEO-INFRA` class in `review.config.json` names them for this repo; typically that is the sitemap, the robots file, the root layout or document, the structured-data component, and any metadata export.
+2. Map changed content to URLs using the route map named by `repoFacts.routeMap`. **If the repo has not supplied one, derive the URLs from the router yourself and say that you did**, because an inferred URL set is exactly where a page gets silently missed.
+3. Read the **generated** metadata, not just the source data, since page metadata is usually assembled in the route handler rather than written literally.
 4. Run all three passes.
 
 ---
@@ -27,7 +27,7 @@ You are also not the accessibility reviewer. Lighthouse reports an accessibility
 - Title exists, is unique across the site, roughly 50 to 60 characters. Longer gets truncated in the SERP.
 - Meta description exists, is unique, roughly 140 to 160 characters.
 - Canonical URL present and pointing at the page's own absolute URL, not a duplicate or stale path.
-- **`metadataBase` is set in the root layout.** Without it, relative canonical URLs and Open Graph image paths resolve incorrectly in production. This is the single most common Next.js App Router SEO defect.
+- **The absolute-URL base is configured.** Relative canonicals and Open Graph image paths must resolve to a real production origin. In Next.js App Router this is `metadataBase` in the root layout and its absence is the single most common SEO defect in that framework; every framework has an equivalent, and the failure is the same either way.
 - No `noindex` on a page meant to rank, and no missing `noindex` on one that should not be.
 - Open Graph and Twitter fields resolve, and any referenced image path exists.
 
@@ -42,10 +42,10 @@ You are also not the accessibility reviewer. Lighthouse reports an accessibility
 - The structured data agrees with the visible page. Schema claiming an FAQ the page does not show is a violation, and a serious one.
 
 **Crawlability**
-- New routes appear in `app/sitemap.ts`, and removed routes are gone from it.
-- `app/robots.ts` does not block anything meant to be indexed.
-- Every internal link resolves to a real route. Run `pnpm links` rather than checking by hand: it derives the live route set from `content/` and fails on anything that does not resolve. It also lists orphans and dead ends, which are warnings rather than errors.
-- What the script cannot catch, and you can: a link that resolves to the **wrong** live route. `/services/agent-evals` where `/services/custom-ai-agents` was meant passes every automated check there is, so read the anchor text against its destination.
+- New routes appear in the sitemap, and removed routes are gone from it.
+- The robots file does not block anything meant to be indexed.
+- Every internal link resolves to a real route. **If the repo declares a link-checking step in `gate`, it already ran and you can trust it**; say which step. If it does not, spot-check the links the change introduced and say that your coverage was manual and partial.
+- What no link checker can catch, and you can: a link that resolves to the **wrong** live route. `/services/agent-evals` where `/services/custom-ai-agents` was meant passes every automated check there is, so read the anchor text against its destination.
 
 ---
 
@@ -90,7 +90,7 @@ What to act on:
 - Core Web Vitals against the 2026 thresholds: **LCP under 2.5s, INP under 200ms, CLS under 0.1.** INP is the most commonly failed of the three.
 - Best Practices failures that are real: console errors, insecure requests, deprecated APIs.
 
-Lighthouse runs against a **dev** server here, so absolute performance numbers are not production numbers. Treat a poor score as a signal to look, not as a finding on its own. Report a performance finding only when you can name the cause in the change set. A slow dev build is not a defect.
+Lighthouse usually runs against a **dev** server here, so absolute performance numbers are not production numbers. Treat a poor score as a signal to look, not as a finding on its own. Report a performance finding only when you can name the cause in the change set. A slow dev build is not a defect.
 
 ---
 
@@ -116,7 +116,7 @@ Use the four tiers in `references/severity.md`. Mapped for this dimension:
 - Voice and tone. The Voice dimension, and duplicating it here is noise.
 - Pre-existing metadata or content problems on pages the change set did not touch.
 
-Note on sitemap exclusions: do **not** assume `/privacy` and `/terms` are excluded. `app/sitemap.ts` currently lists both in `staticRoutes`. Verify what the file actually contains before treating any absence as intentional.
+Note on sitemap exclusions: **read the sitemap before treating any absence as intentional.** It is tempting to assume legal and utility routes are deliberately excluded; plenty of sitemaps list them. Verify what the file actually contains, in this repo, on this run.
 
 ## Output
 

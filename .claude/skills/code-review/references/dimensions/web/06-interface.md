@@ -10,8 +10,8 @@ This dimension exists because a diff cannot show you a broken layout or a focus 
 
 ## How to run it
 
-1. You are given a base URL. Do not start or stop a server. See `references/routes.md`.
-2. Resolve which URLs the change affects using `references/routes.md`. Cap at five.
+1. You are given a base URL. Do not start or stop a server: other agents are using it.
+2. Resolve which URLs the change affects, using the route map named by `repoFacts.routeMap` if the repo supplies one, and the router itself if it does not. Cap at five. If more qualify, review the five closest to the change and **state which ones you dropped**. Never silently truncate.
 3. Load the Chrome DevTools tools with `ToolSearch` (query `select:mcp__chrome-devtools__navigate_page,mcp__chrome-devtools__take_screenshot,mcp__chrome-devtools__resize_page,mcp__chrome-devtools__evaluate_script,mcp__chrome-devtools__take_snapshot,mcp__chrome-devtools__click,mcp__chrome-devtools__hover,mcp__chrome-devtools__press_key,mcp__chrome-devtools__fill,mcp__chrome-devtools__list_console_messages,mcp__chrome-devtools__emulate`).
 4. For each URL run **Pass A** then **Pass B** before moving to the next, so you only load each page once.
 
@@ -37,8 +37,8 @@ Screenshot at **1440** and **375** wide at minimum. Those two catch most of what
 - Line-height drift and font-weight inconsistency between sibling elements
 
 **Colour and surface**
-- Contrast against the measured floors documented in the header comment of `app/globals.css`. Read that comment. Those numbers were measured, and CLAUDE.md requires re-measuring before changing them, so treat them as the standard rather than reaching for a generic WCAG value.
-- Palette drift. The site is Ember Slash, dark surfaces only. A light surface or an off-palette accent is a finding.
+- Contrast against the floors this repo documents, wherever its design tokens live. Read the header comment there. **If the repo states measured floors, those are the standard**, not a generic WCAG number: they were measured against the real surfaces, and an instruction file may require re-measuring before they change. If the repo documents no floors, fall back to WCAG AA (4.5:1 body, 3:1 large text) and say that you did.
+- Palette drift. Establish what the palette is from the tokens, then flag anything outside it. An off-palette accent, or a surface from the wrong side of a light/dark axis the repo does not have, is a finding.
 - Nested border radii that do not sit concentrically, harsh borders, banded gradients
 
 **Readability**
@@ -49,7 +49,7 @@ Two separate things, and a page can pass one and fail the other.
 - Body text at least 16px. Smaller is a finding, not a style choice.
 - Body line-height at least 1.5. Headings can be tighter.
 - Line length between roughly 45 and 75 characters. Both extremes hurt: too long and the eye loses its place returning to the left margin, too short and the rhythm breaks.
-- Contrast against the measured floors in `app/globals.css`, above.
+- Contrast against the repo's documented floors, above.
 - No justified text on the web, no long all-caps runs, and enough space between paragraphs to separate them at a glance.
 
 *Comprehension, which you judge by reading:*
@@ -62,7 +62,9 @@ Two separate things, and a page can pass one and fail the other.
 Readability findings that are about *phrasing* belong to Voice. Yours are about whether the text can be physically read and scanned.
 
 **Design bar**
-CLAUDE.md sets it: unique, fluid, neurally engaging, scenes in a sequence rather than stacked blocks. If the change adds a generic stacked card section that could belong to any SaaS template, say so. This is the one pure judgment call you are asked to make, so make it plainly and only when confident.
+The instruction files set it, if this repo has set one at all. Read what they say and hold the change to it. Where a repo states a bar like "unique, fluid, scenes in a sequence rather than stacked blocks", a generic stacked card section that could belong to any SaaS template is a finding against that bar, and you should say so.
+
+**Where the repo states no design bar, you have no design opinion.** Report layout that is broken, unreadable or inaccessible, all of which are measurable, and stop there. A taste finding with nothing written down behind it is the single fastest way for this dimension to lose the reader's trust.
 
 ---
 
@@ -87,15 +89,18 @@ Every interactive element needs hover, focus, active, and where relevant disable
 - Take an accessibility snapshot and read it as a blind user would.
 
 **Motion**
-This site runs gsap, lenis, and motion, so this matters more than usual.
+Check the dependency list first. A repo running a scroll or animation library (gsap, lenis, motion, and their equivalents) has far more surface here than one using CSS transitions, and the checks below matter in proportion.
 - Emulate `prefers-reduced-motion: reduce`. Scroll-driven animation, smooth scroll, and parallax must meaningfully reduce. Ignoring the preference is a finding.
 - Smooth scroll must not break anchor links, in-page navigation, or the browser back button.
 - Nothing may hijack scroll such that the user cannot reach content.
 
 **Conversion paths**
-There are **two**, and both matter. Check whichever the change touches:
-- The **Cal.com booking CTA**, which renders site-wide from `components/site/header.tsx` and `components/site/mobile-nav.tsx` using `SITE.calLink` in `lib/config.ts`. It is on every page, and in the mobile nav it sits behind a menu, which is exactly where a focus trap or keyboard failure hides.
-- The **subscribe form**, which renders on blog posts and in one block type, not site-wide. For it: the input has an associated label, correct `type` and `autocomplete`; font size is at least 16px so iOS does not zoom on focus; validation fires at a sane time rather than on the first keystroke; errors say what to do, are announced, and are not colour-only; submitting twice quickly does not send two requests; success, failure and in-flight states are visibly distinct.
+Identify what this product asks a visitor to *do*, then check whichever of those the change touches. The two shapes that recur:
+
+- **A primary call to action rendered site-wide from the chrome.** Booking, signup, checkout, contact. It is on every page, and on mobile it usually sits behind a menu, which is exactly where a focus trap or keyboard failure hides. Find where its destination is configured rather than assuming it is a literal in the markup.
+- **A form.** For any of them: the input has an associated label, correct `type` and `autocomplete`; font size is at least 16px so iOS does not zoom on focus; validation fires at a sane time rather than on the first keystroke; errors say what to do, are announced, and are not colour-only; submitting twice quickly does not send two requests; success, failure and in-flight states are visibly distinct.
+
+If the change touches neither, say so and skip this block. Do not invent a conversion path to have something to check.
 
 **Runtime health**
 - Read the console. Errors and warnings introduced by the change are findings.
@@ -107,7 +112,7 @@ There are **two**, and both matter. Check whichever the change touches:
 
 Emulate a real mobile device, do not just narrow the window. Resize to 375 and 320, and use device emulation so touch is actually touch.
 
-Most traffic is mobile, and mobile is where this site's stack is most likely to break: gsap, lenis and motion all behave differently under touch than under a mouse.
+Most traffic is mobile, and mobile is where a desktop-first stack is most likely to break. Scroll and animation libraries in particular behave differently under touch than under a mouse.
 
 **Layout and viewport**
 - No horizontal scroll at 375, and none at 320 either. The narrowest common device is the one nobody tests.
@@ -128,7 +133,7 @@ Most traffic is mobile, and mobile is where this site's stack is most likely to 
 
 **Navigation**
 - The mobile nav opens, traps focus, closes by both its button and Escape, and restores focus and scroll position on close.
-- Both conversion paths are reachable on mobile. The booking CTA lives behind the mobile menu, so it is one extra failure away from being unreachable.
+- Every conversion path is reachable on mobile. A primary CTA that lives behind the mobile menu is one extra failure away from being unreachable, and that failure is invisible on desktop.
 
 ---
 
@@ -136,15 +141,15 @@ Most traffic is mobile, and mobile is where this site's stack is most likely to 
 
 Use the four tiers in `references/severity.md`. Mapped for this dimension:
 
-- **Critical**: content unreadable, unreachable, or overlapping at a common viewport; a user cannot complete either conversion path; keyboard users cannot reach or operate something.
+- **Critical**: content unreadable, unreachable, or overlapping at a common viewport; a user cannot complete a conversion path; keyboard users cannot reach or operate something.
 - **High**: horizontal overflow on mobile; contrast below the documented floor; a broken or missing image; no visible focus ring; reduced motion ignored; an unlabelled control; a form that double-submits.
 - **Low**: spacing inconsistency, line length, palette drift on a small element, missing hover or loading feedback, validation timing, tap targets, console errors.
 - **Minor**: refinements a reasonable person could decline.
 
 ## Known false positives
 
-- Deliberate art direction you happen to dislike. Taste is not a defect. Anchor to the documented floors and the design bar, not to preference.
-- Dev-only artefacts: the Next.js dev indicator, HMR overlays, fast-refresh notices, unoptimised dev images.
+- Deliberate art direction you happen to dislike. Taste is not a defect. Anchor to the documented floors and the documented design bar, not to preference. Where neither is documented, you have nothing to anchor to and the finding is not yours to make.
+- Dev-only artefacts: framework dev indicators, HMR overlays, fast-refresh notices, unoptimised dev images.
 - Console noise from analytics failing without local environment keys. Not a defect.
 - Rendering differences caused by missing local environment variables.
 - Reduced motion "not working" when you did not actually emulate it. Emulate first.

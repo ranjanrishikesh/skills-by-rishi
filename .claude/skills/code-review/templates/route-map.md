@@ -1,48 +1,49 @@
-# Change set to URL mapping
+# Change set to URL mapping — TEMPLATE
 
-Shared by every dimension that needs a rendered page. **Verify against the current tree before relying on it.** Routes get added, and a stale map here silently sends reviewers to 404s or, worse, tells them a live page does not exist.
+Copy this into your repo (`docs/route-map.md` is a fine home), fill it in, and point `repoFacts.routeMap` at it in `review.config.json`.
+
+**This file is optional.** Without it, the Interface and Discoverability dimensions derive URLs from the router themselves and say that they did. Supply one when your routing is derived rather than literal, because that is where a reviewer silently misses a page: a data file that creates or destroys a URL as a side effect of a field value is invisible to anyone reading the router.
+
+**Verify it against the current tree before relying on it.** Routes get added, and a stale map here sends reviewers to 404s or, worse, tells them a live page does not exist. A wrong map is worse than no map, because no map makes the reviewer look.
+
+[Delete the bracketed instructions as you fill this in.]
+
+---
 
 ## Content collections
 
-`content/` holds exactly one collection now: `content/blog/`.
+[List every directory of authored files that produces URLs, and what each file maps to. One row per pattern, not per file.]
 
 | Changed file | URL |
 |---|---|
-| `content/blog/<slug>.json` | `/blog/<slug>`, **and** its `/blog/category/<category>` hub, `/author/<author>` hub, and any `/blog/tag/<tag>` hub it belongs to |
-| `content/authors/<slug>.json` | `/author/<slug>` |
+| `content/<collection>/<slug>.<ext>` | `/<collection>/<slug>` |
 
-Blog taxonomy routes are derived, so a content edit can create or destroy a URL:
-changing `meta.category` moves a post between two hubs, and adding or removing a tag can
-push it over or under the two-post threshold that decides whether `/blog/tag/<tag>`
-exists at all. When reviewing a content change, check the hubs it touches, not just the
-post.
+**Derived routes are the reason this file exists.** [Name every case where a *field value* creates or destroys a URL, rather than the file's existence doing it. The recurring shapes:]
 
-Everything else that used to live under `content/` is gone. Pages became
-hard-coded React on 2026-08-02: `content/pages/`, `content/services/` and
-`content/pages/hubs.json` were deleted along with `components/content-page.tsx`
-and `components/collection-index.tsx`.
+- [A taxonomy field that moves a document between hub pages, so editing it changes two URLs and not the one you edited.]
+- [A tag or category page that only exists above a threshold, so adding or removing one entry creates or deletes a route.]
+- [A draft or published flag that removes a page from the build entirely.]
+- [Pagination, where adding one item can add a page.]
+
+[For each, say what a reviewer must check *in addition to* the file that changed.]
 
 ## Pages
 
-A page is `app/<route>/page.tsx`, composing plain-props components from
-`components/sections/`, with its copy in a sibling `content.ts`.
+[Where hard-coded pages live and how a file maps to its URL. Note any file that is NOT a page despite living among them, and any file whose copy renders on many pages: those are the ones that get reviewed as a single page when they affect fifty.]
 
 | Changed file | URL |
 |---|---|
-| `app/(home)/page.tsx` + `app/(home)/content.ts` | **`/`** |
-| `app/pricing/`, `app/services/`, `app/what-we-build/`, `app/privacy/`, `app/terms/` | the matching path |
-| `app/services/<slug>/` (five real folders, no dynamic route) | `/services/<slug>` |
-| `app/blog/content.ts` | **Not a page.** Hub copy for `/blog`, and `MEMO`, which renders in the footer of **every** `/blog/<slug>` post. Changing MEMO touches every post. |
+| `app/<route>/page.tsx` | `/<route>` |
 
-A change to `components/sections/*` can affect both a page and the blog, because
-`components/blocks/renderer.tsx` adapts the same components for posts. Check one
-of each.
+## Shared components
+
+[Which components render on every page, or on a whole class of pages. A change to one of these affects every route, and the reviewer needs to know to sample rather than enumerate.]
+
+A change to a shared component, to the global stylesheet, or to the root layout affects every route. **Do not render all of them.** Pick at most three that best exercise the change: one content-heavy page, one list page, and the home page.
 
 ## Static routes
 
-`/`, `/blog`, `/services`, `/pricing`, `/privacy`, `/terms`, `/what-we-build`
-
-A change to a shared component, to `app/globals.css`, or to `app/layout.tsx` affects every route. Do not render all of them. Pick at most three that best exercise the change: one content-heavy page, one list page, and the home page.
+[List them, so a reviewer can tell a real route from a typo.]
 
 ## Resolving which URLs to review
 
@@ -51,7 +52,7 @@ A change to a shared component, to `app/globals.css`, or to `app/layout.tsx` aff
 3. For each changed component or style file, grep for which pages render it, then pick representative routes per the rule above.
 4. Cap at five URLs. If more qualify, review the five closest to the change and **state which ones you dropped**. Never silently truncate.
 
-If a changed content file maps to no route you can verify, say so and name the file. Do not guess a URL, and do not quietly skip it.
+If a changed file maps to no route you can verify, say so and name the file. Do not guess a URL, and do not quietly skip it.
 
 ## Running the site
 

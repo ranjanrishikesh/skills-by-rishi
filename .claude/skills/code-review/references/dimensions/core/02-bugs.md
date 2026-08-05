@@ -2,7 +2,14 @@
 
 ## What this dimension is
 
-The correctness reviewer, and the one carrying the zero-defect goal. **This repository has no test suite.** No test script, no test files. Nothing downstream catches what you miss, so assume zero coverage on every line you review.
+The correctness reviewer, and the one carrying the zero-defect goal.
+
+**Find out what safety net actually exists here before you start, because it changes how you read.** Check `gate` in `review.config.json` and look for a test directory. Then:
+
+- **No test step and no test files.** Assume zero coverage on every line you review. Nothing downstream catches what you miss, and you are the last reader before production.
+- **A test step exists and passed.** It ran before you were launched, so behaviour it covers is already checked. Spend your budget on what tests structurally cannot catch: the interaction between the change and its callers, and the inputs nobody thought to write a case for. Do not re-derive what a green suite already told you.
+
+Say which of those two situations you were in. A reader weighing your findings needs to know whether "no bugs found" was said with a suite behind it or without one.
 
 You run **two passes in a fixed order**. This structure is the point of the dimension, not decoration. A reviewer told to be simultaneously fast and thorough averages into being neither: it reads shallowly but slowly, and reports middling findings. Keeping the passes separate and sequential preserves both a high-precision sweep and a high-recall hunt inside one report.
 
@@ -44,12 +51,14 @@ Now read whatever you need. Work outward from each change, one at a time. Do not
 - `Promise.all` rejects the whole set on one failure. Check that is intended.
 - Check-then-act sequences where the state can change in between.
 
-**React and Next specific**, which is most of this codebase:
+**React and Next**, when the change set touches components. Skip this block entirely on a repo that has none:
 - **Stale closures.** A value read inside an effect or callback but missing from the dependency array keeps referencing the render it was created in. Symptoms are handlers acting on old state and effects that never re-run.
 - **useEffect race conditions.** Two async runs resolve out of order and the slower one wins. The fix is a cancelled flag checked before every state update and set in cleanup. Its absence around an async effect is a finding.
 - Missing effect cleanup: subscriptions, timers, listeners, observers.
 - Dependency arrays that are wrong in either direction, too few or too many.
 - Server versus client boundary mistakes: server-only APIs in client components, or client state assumed on the server.
+
+**Whatever framework this repo does use**, the general shape of the block above is the thing to carry over: lifecycle that must be cleaned up, state read from a stale scope, and work that crosses a process or rendering boundary. Every framework has its own version of each, and they are where the framework-specific bugs live.
 
 **Data and time**
 - Timezone handling, DST, and anything comparing a stored timestamp to `now`.
@@ -57,17 +66,17 @@ Now read whatever you need. Work outward from each change, one at a time. Do not
 
 ---
 
-## Pass C: dependencies (only when the change set touches `package.json` or `pnpm-lock.yaml`)
+## Pass C: dependencies (only when the change set carries the `DEPS` class)
 
-Skip this pass entirely if neither file changed.
+Skip this pass entirely if the dependency set did not change. `DEPS` covers whichever manifest and lockfile this repo uses: `package.json` and its lockfile, `go.mod` and `go.sum`, `Cargo.toml` and `Cargo.lock`, `pyproject.toml` and `poetry.lock`, `requirements.txt`.
 
-This repository has no separate security reviewer, so this pass is the only thing standing between a known-vulnerable dependency and production. It is narrow on purpose: you are not auditing the dependency tree, you are checking what this change does to it.
+This review has no separate security reviewer, so this pass is the only thing standing between a known-vulnerable dependency and production. It is narrow on purpose: you are not auditing the dependency tree, you are checking what this change does to it.
 
-1. Read the version delta. For every package added, removed, or moved, note the exact resolved version in the lockfile, not the caret range in `package.json`. The range is the intent; the lockfile is what ships.
-2. For any framework or runtime package, and always for `next`, `react`, and anything handling requests, check whether the resolved version is behind a published security fix. Search for the package's security releases and compare version numbers directly.
+1. Read the version delta. For every package added, removed, or moved, note the exact resolved version in the **lockfile**, not the range in the manifest. The range is the intent; the lockfile is what ships.
+2. For any framework or runtime package, and always for anything that parses untrusted input or handles requests, check whether the resolved version is behind a published security fix. Search for the package's security releases and compare version numbers directly.
 3. Flag a version pinned below a patched release, even by one patch. State which advisory and which fixed version.
 4. When flagging, say whether the vulnerable feature is actually used here. A middleware CVE in a repo with no middleware is real but low severity, and saying so is what makes the finding trustworthy rather than alarmist.
-5. Also flag: a dependency added with no apparent use, a pinned version replaced by a looser range, and a lockfile change with no corresponding `package.json` change, which usually means an unintended resolution drift.
+5. Also flag: a dependency added with no apparent use, a pinned version replaced by a looser range, and a lockfile change with no corresponding manifest change, which usually means an unintended resolution drift.
 
 ## Severity
 
@@ -80,9 +89,9 @@ Rank by likelihood of being hit in production multiplied by the damage when it i
 Research on review effectiveness is blunt about this: roughly **15% of review comments address real defects** and the rest is style noise. Precision is what makes the other 85% not happen.
 
 - A `null` that cannot occur because of a guard further up the call chain. Read up before flagging.
-- Input already constrained by a Zod schema or by the type system. Check the schema first.
+- Input already constrained by a schema validator or by the type system. Check the schema first.
 - A path unreachable given how the function is actually called. If every caller passes a literal, an "invalid input" finding is theoretical.
-- Anything `tsc` or the linter catches. Those run separately and reporting them wastes the reader's attention.
+- Anything a typechecker or linter catches, **when the repo declares one in `gate` and it passed**. Those ran separately and reporting them wastes the reader's attention. Where no such step is declared, this exemption does not apply: nothing else caught it, so it is a real finding.
 - Style, naming, formatting, structure, missing tests, missing docs. None are bugs.
 - Pre-existing defects on unmodified lines. Pass B makes these very easy to trip over, because you are reading whole files. Anchor every finding to a changed line.
 

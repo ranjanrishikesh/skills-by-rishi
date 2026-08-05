@@ -15,16 +15,18 @@ Both are a written statement checked against a source of record. A stale comment
 
 ## Part 1: Comments versus the code
 
-Comments here carry decisions, not descriptions. Example from `app/api/subscribe/route.ts`:
+The comments worth reading carry decisions, not descriptions. The shape to look for:
 
 ```
 /**
- * Email capture (Decision #21 + Q23): PostHog person + event is the store
- * until an email provider becomes the list of record. ...
+ * Email capture (Decision #21): the analytics store is the list of record
+ * until an email provider replaces it. Do not add a second writer here.
  */
 ```
 
 That is a contract. Code that quietly violates it is a defect even when it runs correctly, because the next reader will trust it and be wrong.
+
+A comment that merely restates its own line ("increment the counter") carries nothing and is not your subject. Weight the ones that assert something a reader cannot see from the code in front of them.
 
 **How to run it**
 
@@ -46,21 +48,26 @@ The second is more common and more damaging, because a stale comment actively mi
 
 ## Part 2: Audience claims versus the sources of record
 
-The root CLAUDE.md has a section titled "Facts that must not drift." Nothing in the codebase enforces it. There is no schema for it, no test, no lint rule. The build passes with a wrong price on the pricing page.
+Nothing in a codebase enforces this. There is no schema for it, no test, no lint rule. The build passes with a wrong price on the pricing page.
+
+**Skip this part entirely if the change set has no audience-facing text.** Say that you did.
 
 **How to run it**
 
-1. Read that section of CLAUDE.md fresh. Treat it as current, not as summarised here, because it changes.
-2. Determine whether the change touches anything audience-facing: `content/`, page components, metadata, or structured data.
-3. Extract every factual claim the change introduces or edits. A factual claim is any number, price, duration, count, name, date, or statement about what agentclaw has done or who agentclaw is.
-4. Trace each to a source in the repo. **Untraceable is the default failure, not an edge case.**
+1. **Read `repoFacts.sourcesOfRecord` in `review.config.json`, then read those files fresh.** They are the repo's declared answers to questions like what it charges, who works here, and what has shipped. Treat them as current, never as summarised from a previous run, because they change. Also read the instruction files you were handed: they often carry a "facts that must not drift" section, and that section is binding.
+2. Determine whether the change touches anything audience-facing: content files, page components, metadata, structured data, error strings a user sees.
+3. Extract every factual claim the change introduces or edits. A factual claim is any number, price, duration, count, name, date, or statement about what this organisation has done or who it is.
+4. Trace each to a source of record. **Untraceable is the default failure, not an edge case.**
 
-Check these specifically, because they have drifted before:
+The classes that drift, in rough order of how often and how expensively:
 
-- **Pricing has two tiers and they are not interchangeable.** A one-off starter build and a production sprint are separate offers; the retainer floor is a third thing. Any phrasing presenting the retainer floor as a minimum spend is a finding: it turns away the starter buyer and contradicts the pricing page. The number of record is `PRICING` in `lib/config.ts`, which `/pricing` reads. Read the surrounding sentence, not just the digits.
-- **Team size.** The audience-facing "we" is accurate. Copy written for a solo operator is stale, and so is anything implying a larger company.
-- **No fabricated proof.** No client name, result, case study, or metric attributed to work that did not happen. Plural claims about a client base are a finding unless traceable.
-- **Dates.** `publishedAt` must be real. A future date, a placeholder, or one contradicting the file's git history is a finding.
+- **Prices and commercial terms.** Read the surrounding sentence, not just the digits. The common failure is not a wrong number but a right number framed as the wrong kind of thing: a floor presented as a typical cost, a tier presented as the only tier. That contradicts the pricing page while every digit on it is correct.
+- **Headcount and team claims.** "We", "our team", "a small studio", any figure. Copy written for a different size of company is stale the moment the company changes shape, and nothing flags it.
+- **Proof.** Customer names, results, case studies, metrics, logos. Anything attributed to work that cannot be traced is a finding, and a serious one. Plural claims about a customer base ("teams like yours") need a source like any other claim.
+- **Dates.** Publication and modification dates must be real. A future date, a placeholder, or one contradicting the file's git history is a finding.
+- **Capability and compliance claims.** "SOC 2", "encrypted at rest", "GDPR compliant", "99.9% uptime". These read as marketing and are legally load-bearing. Untraceable is a finding at High or above.
+
+**If `sourcesOfRecord` is empty**, say so and report untraceable claims at Low rather than High. You cannot hold copy to a standard the repo never wrote down. Recommending that the repo declare one is a legitimate finding in itself.
 
 ---
 
@@ -78,7 +85,7 @@ Use the four tiers in `references/severity.md`: **Critical**, **High**, **Low**,
 - Commented-out code, license headers, generated banners.
 - Your opinion that a comment should exist. Missing comments are not in scope.
 - Illustrative examples clearly marked hypothetical.
-- Prices in a blog post quoting a third party. Those are that vendor's numbers.
+- Prices or metrics quoting a named third party. Those are that vendor's numbers, and your check is that the attribution is present, not that the figure matches our own.
 - Voice, tone, and phrasing quality. The Voice dimension owns that, and duplicating it here is noise.
 - Internal files no visitor sees, unless they are the source of record for a rendered claim.
 - Pre-existing drift on lines the change set did not modify.
