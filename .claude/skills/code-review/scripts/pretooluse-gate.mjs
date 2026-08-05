@@ -1,12 +1,18 @@
 #!/usr/bin/env node
-// agentclaw pre-publish gate, ADVISORY half.
+// The pre-publish gate, ADVISORY half.
 //
-// Registered as a PreToolUse(Bash) hook. It guesses from the command string
-// whether a publish is about to happen, and if so runs the same checks the
-// pre-push hook runs, so an agent is told before it wastes a round trip.
+// Registered as a PreToolUse(Bash) hook in Claude Code. It guesses from the
+// command string whether a publish is about to happen, and if so runs the same
+// checks the pre-push hook runs, so an agent is told before it wastes a round
+// trip.
+//
+// THIS FILE IS THE ONLY HARNESS-SPECIFIC PIECE OF THE GATE. On an agent with no
+// PreToolUse equivalent, it simply is not installed, and enforcement is
+// unaffected because the pre-push hook is what enforces. Do not port
+// enforcement logic into here to make another agent work: port the hook.
 //
 // IT IS NOT THE ENFORCEMENT POINT, and must not be treated as one.
-// .githooks/pre-push is. Git invokes that on the real publish, after the shell
+// The pre-push hook is. Git invokes that on the real publish, after the shell
 // has resolved quoting, command substitution, heredocs, aliases and escapes,
 // so it cannot be fooled by spelling.
 //
@@ -29,6 +35,7 @@
 
 import { readFileSync } from 'node:fs';
 import { runChecks, formatBlock, formatContainerNotice } from './publish-checks.mjs';
+import { projectRoot } from './config.mjs';
 
 function allow() { process.exit(0); }
 
@@ -145,7 +152,8 @@ const IS_GH_PUBLISH = new RegExp(String.raw`\bgh\b(?:\s+\S+)*?\s+pr\s+create\b`,
 if (!IS_GIT_PUBLISH.test(scan) && !IS_GH_PUBLISH.test(scan)) allow();
 
 // 4. Run the shared checks. Same code path as pre-push, so no disagreement.
-const result = runChecks(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+const dir = projectRoot();
+const result = runChecks(dir);
 
 if (result.ok) {
   // Must go to stdout as JSON. PreToolUse discards stderr entirely on exit 0,
@@ -158,4 +166,4 @@ if (result.ok) {
   allow();
 }
 
-deny(formatBlock(result));
+deny(formatBlock(result, dir));

@@ -1,7 +1,10 @@
 {
-  "_comment": "Deterministic BLOCKING rules for the pre-publish humanizer gate (.claude/hooks/humanizer-gate.mjs). Kept DELIBERATELY SMALL: a match hard-blocks a push, so only unambiguous, validated-low-false-positive tells live here. Everything else (title case, hype words, negative parallelism, decorative emoji, en-dash-as-em, etc.) is handled with judgment by the voice rewriting pass via .claude/skills/code-review/references/voice/ai-tells-catalog.md. Each rule below was validated against the real content corpus on 2026-07-13. Regexes are JS RegExp sources; \\u escapes keep this file ASCII so it never flags itself. Optional per-rule 'dirs' narrows scope.",
-  "scanDirs": ["content", "components", "app"],
-  "scanExt": [".json", ".ts", ".tsx", ".md", ".mdx"],
+  "_comment": "Deterministic BLOCKING rules for the pre-publish tell gate. A match hard-blocks a push, so this file is kept DELIBERATELY SMALL: only unambiguous tells with a validated near-zero false-positive rate belong here. Everything judgment-shaped (title case, hype vocabulary, negative parallelism, decorative emoji, rule-of-three, en-dash-as-em) is handled by the Voice review dimension and the rewriting pass, against references/voice/ai-tells-catalog.md. Regexes are JS RegExp sources; \\u escapes keep this file ASCII so it never flags itself. Optional per-rule 'dirs' narrows a rule to particular directories.",
+
+  "_scanning": "scanDirs and scanExt normally come from review.config.json, which wins over anything set here. They are absent from this template on purpose: a rules file that shipped with directories in it would start blocking pushes in a repo that never chose to scan anything. Set publishGate.scanDirs in review.config.json to switch the gate on.",
+
+  "_adopting": "These three rules encode one house style: straight ASCII punctuation, no em-dashes. That is a real editorial position and not a universal law. Delete any rule you disagree with rather than working around it, because a blocking rule nobody believes in gets bypassed with --no-verify, and that habit costs you the review receipt too.",
+
   "rules": [
     {
       "id": "em-dash",
@@ -18,9 +21,8 @@
     {
       "id": "curly-quotes",
       "severity": "block",
-      "dirs": ["content"],
       "regex": "[\\u2018\\u2019\\u201C\\u201D]",
-      "message": "Curly/smart quote or apostrophe found in authored content. A paste-from-model fingerprint in a straight-quote repo. Normalize to straight ASCII (' and \"). (Scoped to content/ only; rendering components may use typographic quotes deliberately.)"
+      "message": "Curly/smart quote or apostrophe found in authored content. A paste-from-model fingerprint in a straight-quote repo. Normalize to straight ASCII (' and \"). If your rendering layer uses typographic quotes deliberately, narrow this rule with a 'dirs' key rather than deleting it."
     }
   ]
 }

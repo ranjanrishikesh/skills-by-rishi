@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agentclaw code-review receipt.
+// The code-review receipt.
 //
 // A receipt records that /code-review reviewed an exact change set and applied
 // its own fixes to what it found. The publish gate reads it so a review is
@@ -78,8 +78,30 @@ import { readFileSync, writeFileSync, existsSync, rmSync, lstatSync, readlinkSyn
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { loadConfig, projectRoot } from './config.mjs';
 
-const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const projectDir = projectRoot();
+
+// Read once. Every default below resolves through here rather than naming a
+// branch, so a repo on master, trunk or develop needs no edit to this file.
+//
+// A missing config is deliberately fine here and returns detected defaults.
+// This script has to work before `init` has ever run, or nothing could
+// bootstrap a repository in the first place. publish-checks.mjs makes the
+// opposite call for the opposite reason, and both are correct: more review is
+// the safe direction to fail, and allowing an unreviewed push is not.
+const { config } = loadConfig(projectDir);
+
+/**
+ * The branch a review is measured against, when a caller does not name one.
+ *
+ * A function rather than a constant because it is used as a default parameter
+ * value, which JavaScript evaluates at call time. That keeps every entry point
+ * agreeing on one answer without any of them hardcoding it.
+ */
+function defaultBase() {
+  return config.baseBranch;
+}
 
 function sh(cmd) {
   try {
@@ -98,7 +120,11 @@ function gitDir() {
 }
 
 export function receiptPath() {
-  return path.join(gitDir(), 'agentclaw-code-review-receipt.json');
+  // Named from config so two skills, or a fork of this one, can coexist in one
+  // clone without silently reading each other's receipts. Still under .git/,
+  // which is the load-bearing part: a receipt is local proof about local state
+  // and must never be committable or shareable between clones.
+  return path.join(gitDir(), config.receiptName);
 }
 
 /**
@@ -109,7 +135,7 @@ export function receiptPath() {
  *
  * Returns { hash, base, branch } or { error } when git state is unusual.
  */
-export function computeScope(baseRef = 'origin/main') {
+export function computeScope(baseRef = defaultBase()) {
   const base = sh(`git merge-base ${baseRef} HEAD`).trim();
   if (!base) return { error: `could not resolve merge-base against ${baseRef}` };
 
@@ -145,7 +171,7 @@ export function computeScope(baseRef = 'origin/main') {
   // baseRef is deliberately NOT hashed. The resolved merge-base SHA above
   // already distinguishes different bases, so hashing the ref *label* adds no
   // safety and creates an unescapable block: reviewing against `main` stamps
-  // the label `main` while the gate always checks `origin/main`, so the
+  // the label `main` while the gate always checks the configured base, so the
   // hashes never match and re-running the review never terminates.
   for (const rel of paths) {
     h.update('path\0' + rel + '\0');
@@ -195,7 +221,7 @@ function readReceipt() {
  * then commit seven separately hides a defect that exists only because both
  * landed; one diff across the whole unreviewed span does not.
  */
-export function computeReviewScope(baseRef = 'origin/main', { full = false } = {}) {
+export function computeReviewScope(baseRef = defaultBase(), { full = false } = {}) {
   const base = sh(`git merge-base ${baseRef} HEAD`).trim();
   if (!base) return { error: `could not resolve merge-base against ${baseRef}` };
 
@@ -302,7 +328,7 @@ export const CONTAINER_SKIPS = [
  * { ok: false, reason } otherwise. { ok: null, reason } when git state is
  * unusual and no judgment can be made (callers should fail open on this).
  */
-export function checkReceipt(baseRef = 'origin/main') {
+export function checkReceipt(baseRef = defaultBase()) {
   const scope = computeScope(baseRef);
   if (scope.error) return { ok: null, reason: scope.error };
 
@@ -395,13 +421,13 @@ function stamp(baseRef, { container = false } = {}) {
 const cmd = process.argv[2];
 // Find the ref wherever it sits rather than demanding position 3, so a flag may
 // precede it. Two real failures came from taking argv[3] literally: `scope
-// --full main` silently fell back to origin/main, a plausible-looking wrong
-// answer rather than an error, and `stamp --container` read the flag as a base
-// ref and died on an unresolvable merge-base. Git refuses to name a ref with a
-// leading `--`, so skipping flag-shaped tokens can never skip a real one.
+// --full main` silently fell back to the default base, a plausible-looking
+// wrong answer rather than an error, and `stamp --container` read the flag as a
+// base ref and died on an unresolvable merge-base. Git refuses to name a ref
+// with a leading `--`, so skipping flag-shaped tokens can never skip a real one.
 // `waive` does NOT use this: its argv[3] is the reason, which may look like
 // anything at all.
-const baseArg = process.argv.slice(3).find((a) => !a.startsWith('--')) || 'origin/main';
+const baseArg = process.argv.slice(3).find((a) => !a.startsWith('--')) || defaultBase();
 
 if (cmd === 'hash') {
   const s = computeScope(baseArg);
@@ -429,7 +455,7 @@ if (cmd === 'hash') {
   // NOTE the argument shape: `waive` takes the REASON as argv[3] and an
   // optional base ref as argv[4]. Every other subcommand takes the base ref as
   // argv[3]. Reusing argv[3] for both made the reason get parsed as a ref.
-  const waiveBase = process.argv[4] || 'origin/main';
+  const waiveBase = process.argv[4] || defaultBase();
   // Explicit user waiver. Deliberately NOT the same shape as a clean receipt:
   // it records that review was skipped on request, so a waived publish can
   // never be mistaken later for a reviewed one.

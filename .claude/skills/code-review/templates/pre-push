@@ -1,28 +1,33 @@
 #!/usr/bin/env bash
-# agentclaw pre-push hook. THE AUTHORITATIVE PUBLISH GATE.
+# THE AUTHORITATIVE PUBLISH GATE.
 #
 # Git runs this on the real publish, after the shell has already resolved
 # quoting, command substitution, heredocs, aliases and escapes. It therefore
-# cannot be fooled by how the command was typed, which the PreToolUse string
-# matcher demonstrably could: three review cycles each found a new bypass
-# (command substitution inside quotes, heredoc bodies, a backslash-escaped
-# command name, ANSI-C quoting, and branch names containing an excluded
-# keyword). All of them executed for real.
+# cannot be fooled by how the command was typed, which a string matcher
+# demonstrably could: three review cycles each found a new bypass (command
+# substitution inside quotes, heredoc bodies, a backslash-escaped command name,
+# ANSI-C quoting, and branch names containing an excluded keyword). All of them
+# executed for real.
 #
-# The PreToolUse hook still runs, but only as fast advisory feedback and to
-# cover `gh pr create`, which no git hook sees. This file is what decides.
+# Because git invokes this itself, with no agent involved, enforcement is
+# identical under every agent, in a bare terminal, and in CI. The PreToolUse
+# hook is advisory only and covers `gh pr create`, which no git hook sees.
 #
-# Enable once per clone (local config, not committed):
-#     git config core.hooksPath .githooks
-#
-# Bypassing requires --no-verify, which is a deliberate and visible act.
+# Written by the code-review skill's installer. Re-run the installer to update
+# it. Bypassing requires --no-verify, which is a deliberate and visible act.
 
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$ROOT" ] || exit 0
 
-CHECKS="$ROOT/.claude/hooks/publish-checks.mjs"
+CHECKS="$ROOT/__SKILL_DIR__/scripts/publish-checks.mjs"
+
+# Fail OPEN when the machinery itself is absent, and only then. A clone that has
+# not installed the skill, or a machine with no node, is not the same thing as a
+# change set that failed review: refusing there would brick a repository over a
+# missing tool rather than over anything anyone wrote. Everything the gate
+# actually judges fails CLOSED, inside publish-checks.mjs.
 if [ ! -f "$CHECKS" ]; then
   echo "[pre-push] $CHECKS missing; skipping checks (fail-open)." >&2
   exit 0

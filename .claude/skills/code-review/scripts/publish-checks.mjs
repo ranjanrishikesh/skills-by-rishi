@@ -1,16 +1,23 @@
 #!/usr/bin/env node
-// agentclaw publish checks, shared by both enforcement points.
+// Publish checks, shared by both enforcement points.
 //
 // Two things guard publishing, and they are not equals:
 //
-//   1. .githooks/pre-push  -- AUTHORITATIVE. Git invokes it on the actual push,
+//   1. the pre-push hook  -- AUTHORITATIVE. Git invokes it on the actual push,
 //      after the shell has finished doing whatever it was going to do. It
 //      cannot be fooled by how the command was spelled.
 //
-//   2. .claude/hooks/humanizer-gate.mjs -- ADVISORY. A PreToolUse hook that
-//      guesses from the command string, so an agent gets the message before it
-//      wastes a round trip. It also covers `gh pr create`, which no git hook
-//      sees.
+//   2. pretooluse-gate.mjs -- ADVISORY. A PreToolUse hook that guesses from the
+//      command string, so an agent gets the message before it wastes a round
+//      trip. It also covers `gh pr create`, which no git hook sees.
+//
+// THE SPLIT IS ALSO WHAT MAKES THIS AGENT-AGNOSTIC.
+//
+// Git runs the pre-push hook itself, with no agent involved, so enforcement
+// works identically under Claude Code, Codex, Cursor, a bare terminal or CI.
+// The PreToolUse half is the only part bound to one harness, and losing it
+// costs fast feedback and `gh pr create` coverage, never enforcement. Do not
+// invert that relationship.
 //
 // That split exists because three review cycles each found a NEW way to slip a
 // publish past a string matcher: command substitution inside quotes, heredoc
@@ -24,12 +31,12 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { checkReceipt } from './review-receipt.mjs';
+import { loadConfig, projectRoot, CONFIG_NAME } from './config.mjs';
 
-export function projectRoot() {
-  return process.env.CLAUDE_PROJECT_DIR || process.cwd();
-}
+export { projectRoot };
 
 function sh(cmd, cwd) {
   try { return execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
@@ -37,27 +44,75 @@ function sh(cmd, cwd) {
 }
 
 /**
+ * Whether the hook git will ACTUALLY run on push calls these checks.
+ *
+ * The version this was ported from compared `core.hooksPath` to the literal
+ * string `.githooks`, which is wrong in a portable skill for a reason that bites
+ * immediately: git allows exactly one hooks directory per repository, and husky
+ * and lefthook both claim it. In such a repo our hook is correctly installed by
+ * chaining into the existing pre-push, and the old check would report it
+ * missing forever while it worked perfectly.
+ *
+ * So ask the real question instead. Find the pre-push git would run, wherever
+ * that is, and look for a call to this file inside it.
+ */
+export function hooksInstalled(projectDir) {
+  const configured = sh('git config --get core.hooksPath', projectDir).trim();
+  const gitDir = sh('git rev-parse --absolute-git-dir', projectDir).trim() || path.join(projectDir, '.git');
+  const dir = configured
+    ? (path.isAbsolute(configured) ? configured : path.join(projectDir, configured))
+    : path.join(gitDir, 'hooks');
+  const hook = path.join(dir, 'pre-push');
+  if (!existsSync(hook)) return false;
+  try { return readFileSync(hook, 'utf8').includes('publish-checks.mjs'); }
+  catch { return false; }
+}
+
+/**
  * Scan the audience-facing files about to ship for hard-banned AI writing
  * tells. Returns an array of violations, possibly empty.
  */
-export function scanTells(projectDir) {
-  let config = {};
+export function scanTells(projectDir, cfg) {
+  // The rules file is named by review.config.json rather than found at a fixed
+  // path, because what counts as a banned tell is a property of the repository
+  // and not of this skill. A repo that wants none simply sets it to null.
+  const rulesPath = cfg.publishGate && cfg.publishGate.rules;
+  if (!rulesPath) return { violations: [], skipped: 'no tell-rules file configured' };
+
+  let ruleFile = {};
   let rules = [];
   try {
-    config = JSON.parse(readFileSync(path.join(projectDir, '.claude/hooks/ai-tells-lint.json'), 'utf8'));
-    rules = (config.rules || []).filter((r) => r.severity === 'block');
+    ruleFile = JSON.parse(readFileSync(path.resolve(projectDir, rulesPath), 'utf8'));
+    rules = (ruleFile.rules || []).filter((r) => r.severity === 'block');
   } catch {
-    return { violations: [], skipped: 'ai-tells-lint.json unreadable' };
+    return { violations: [], skipped: `${rulesPath} unreadable` };
   }
   if (rules.length === 0) return { violations: [], skipped: 'no blocking rules configured' };
 
-  const dirs = config.scanDirs || ['content', 'components', 'app'];
-  const exts = new Set(config.scanExt || ['.json', '.ts', '.tsx', '.md', '.mdx']);
+  // Config wins over the rules file, which wins over nothing. The rules file
+  // may carry its own scanDirs so a shared ruleset stays self-describing, but
+  // the repo it is installed into gets the final say on what may be scanned.
+  const dirs = (cfg.publishGate.scanDirs && cfg.publishGate.scanDirs.length)
+    ? cfg.publishGate.scanDirs
+    : (ruleFile.scanDirs || []);
+  const exts = new Set(
+    (cfg.publishGate.scanExt && cfg.publishGate.scanExt.length)
+      ? cfg.publishGate.scanExt
+      : (ruleFile.scanExt || []),
+  );
+  if (dirs.length === 0) return { violations: [], skipped: 'no scan directories configured' };
 
-  const base = sh('git merge-base origin/main HEAD', projectDir).trim();
+  // The base ref comes from config. It was hardcoded to origin/main here while
+  // the receipt took it as a parameter everywhere, so this scan and the receipt
+  // check could measure two different change sets. Worse, on any repo whose
+  // default branch is not main it resolved to nothing, and the indeterminate
+  // path below correctly fails closed, which means every push was blocked with
+  // an error that reads like a fetch problem.
+  const baseRef = cfg.baseBranch;
+  const base = sh(`git merge-base ${baseRef} HEAD`, projectDir).trim();
   // Not a skip. If the base cannot be resolved we do not know what is shipping,
   // and the caller must refuse rather than wave it through. See runChecks.
-  if (!base) return { violations: [], indeterminate: 'could not resolve origin/main' };
+  if (!base) return { violations: [], indeterminate: `could not resolve ${baseRef}` };
 
   const changed = new Set();
   for (const src of [
@@ -111,6 +166,43 @@ export function scanTells(projectDir) {
  * CLOSED, because that is the thing being gated.
  */
 export function runChecks(projectDir = projectRoot()) {
+  // The config is read FIRST and a bad one refuses, for the same reason an
+  // unresolvable base ref refuses below: this component's entire job is to say
+  // what is about to ship, and it cannot do that on assumptions.
+  //
+  // Note the asymmetry with review-receipt.mjs, which happily runs on detected
+  // defaults when no config exists. That is deliberate. There, guessing costs
+  // an unnecessary review. Here, guessing costs an unreviewed push.
+  const loaded = loadConfig(projectDir);
+  if (loaded.invalid) {
+    return {
+      ok: false,
+      indeterminate: true,
+      reason: `${CONFIG_NAME} is unusable (${loaded.problems[0]}), so nothing can say what is about to ship`,
+      violations: [],
+      waived: false,
+      notConfigured: true,
+    };
+  }
+  if (loaded.missing) {
+    return {
+      ok: false,
+      indeterminate: true,
+      reason: `no ${CONFIG_NAME} in this repository, so the gate does not know what to check`,
+      violations: [],
+      waived: false,
+      notConfigured: true,
+    };
+  }
+  const cfg = loaded.config;
+
+  // An installed hook with the gate switched off is a real configuration, not a
+  // mistake: a repo may want the review skill and no enforcement. Say yes
+  // plainly rather than half-checking.
+  if (cfg.publishGate && cfg.publishGate.enabled === false) {
+    return { ok: true, waived: false, container: false, containerSkips: [], disabled: true, hooksInstalled: hooksInstalled(projectDir) };
+  }
+
   let reviewProblem = null;
   let waived = false;
   // Set when the receipt was stamped in container mode: the review ran, but the
@@ -123,8 +215,8 @@ export function runChecks(projectDir = projectRoot()) {
   // CLOSED, not open.
   //
   // It used to fail open, and both invariants depended on it independently:
-  // computeScope resolves origin/main for the receipt hash, and scanTells
-  // resolves it again for the tell scan. So an unresolvable base disabled the
+  // computeScope resolves the base for the receipt hash, and scanTells resolves
+  // it again for the tell scan. So an unresolvable base disabled the
   // whole gate at once, and on the gh pr create path the only trace was a
   // stderr line the harness discards. That is not an exotic corruption case:
   // a shallow clone, a remote that has never been fetched, or a fork whose
@@ -135,7 +227,7 @@ export function runChecks(projectDir = projectRoot()) {
   // cannot say it is safe to ship it. "I could not tell" must not resolve to
   // "go ahead" in the one component whose entire job is to tell.
   try {
-    const r = checkReceipt();
+    const r = checkReceipt(cfg.baseBranch);
     if (r.ok === false) reviewProblem = r.reason;
     else if (r.ok === null) {
       return {
@@ -144,6 +236,7 @@ export function runChecks(projectDir = projectRoot()) {
         reason: `the change set could not be determined (${r.reason}), so nothing can vouch for it`,
         violations: [],
         waived: false,
+        baseBranch: cfg.baseBranch,
       };
     } else if (r.waived) {
       waived = true;
@@ -158,16 +251,18 @@ export function runChecks(projectDir = projectRoot()) {
       reason: `the receipt check errored (${e.message}), so nothing can vouch for this change set`,
       violations: [],
       waived: false,
+      baseBranch: cfg.baseBranch,
     };
   }
 
   // scanTells must not be able to throw its way to a silent allow. On the
   // PreToolUse path a non-zero exit is a NON-BLOCKING error, so an uncaught
-  // crash there would let the very command it gates proceed. A malformed
-  // ai-tells-lint.json (say scanDirs as a string instead of an array) is enough.
+  // crash there would let the very command it gates proceed. A malformed rules
+  // file (say scanDirs as a string instead of an array) is enough, which is why
+  // config.mjs validates that shape before anything reaches here.
   let violations = [];
   try {
-    const res = scanTells(projectDir);
+    const res = scanTells(projectDir, cfg);
     violations = res.violations;
     if (res.indeterminate) {
       // Same reasoning as above: could-not-determine is not could-not-find.
@@ -177,6 +272,7 @@ export function runChecks(projectDir = projectRoot()) {
         reason: `the shipping file set could not be determined (${res.indeterminate}), so the tell scan never ran`,
         violations: [],
         waived: false,
+        baseBranch: cfg.baseBranch,
       };
     }
     // A configured-away scan is a different thing from an undeterminable one:
@@ -194,60 +290,82 @@ export function runChecks(projectDir = projectRoot()) {
       reason: `the tell scan errored (${e.message}), so nothing checked the content about to ship`,
       violations: [],
       waived: false,
+      baseBranch: cfg.baseBranch,
     };
   }
 
-  // The authoritative gate only exists if git was told where to find it.
-  // core.hooksPath is local config, so a clone that never ran the prepare
-  // script has no pre-push hook at all and is relying entirely on this
-  // advisory one, which does not run for a human terminal or CI.
-  const hooksPath = sh('git config --get core.hooksPath', projectDir).trim();
-  const hooksInstalled = hooksPath === '.githooks';
+  // The authoritative gate only exists if git was told where to find it. Hook
+  // installation is local config and is never committed, so a fresh clone that
+  // never ran the installer has no pre-push hook at all and is relying entirely
+  // on this advisory one, which does not run for a human terminal or CI.
+  const installed = hooksInstalled(projectDir);
 
   if (!reviewProblem && violations.length === 0) {
-    return { ok: true, waived, container, containerSkips, hooksInstalled };
+    return { ok: true, waived, container, containerSkips, hooksInstalled: installed };
   }
-  return { ok: false, reason: reviewProblem, violations, waived, container, containerSkips, hooksInstalled };
+  return { ok: false, reason: reviewProblem, violations, waived, container, containerSkips, hooksInstalled: installed };
+}
+
+/**
+ * Where this skill is installed, derived from this file's own location rather
+ * than assumed. The skill can be vendored anywhere, and a block message that
+ * points at a path which does not exist in this repo is worse than one that
+ * points at nothing.
+ */
+function skillDir(projectDir) {
+  const abs = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const rel = path.relative(projectDir, abs);
+  return rel.startsWith('..') ? abs : rel;
 }
 
 /** Build the human-facing block message from a failed runChecks() result. */
-export function formatBlock(result) {
+export function formatBlock(result, projectDir = projectRoot()) {
   const parts = [];
   const steps = [];
+  const skill = skillDir(projectDir);
 
   if (result.violations && result.violations.length > 0) {
     const byRule = {};
     for (const v of result.violations) (byRule[v.id] ||= []).push(v);
-    let s = `HUMANIZER: ${result.violations.length} AI writing tell(s) remain in content about to ship:\n`;
+    let s = `TELLS: ${result.violations.length} banned writing tell(s) remain in content about to ship:\n`;
     for (const [id, vs] of Object.entries(byRule)) {
       s += `- ${id} (${vs.length}): ${vs[0].message}\n`;
       for (const v of vs.slice(0, 8)) s += `    ${v.file}:${v.line}  ${v.snippet}\n`;
       if (vs.length > 8) s += `    ...and ${vs.length - 8} more\n`;
     }
     parts.push(s);
-    steps.push('rewrite the flagged content into agentclaw founder voice, following .claude/skills/code-review/references/voice/rewriting.md and the tell catalog beside it. Do NOT just delete the dash: rewrite the sentence so no dash was ever needed');
+    steps.push(`rewrite the flagged content into this repo's voice, following ${skill}/references/voice/rewriting.md and the tell catalog beside it. Do NOT just delete the offending character: rewrite the sentence so it was never needed`);
   }
 
   if (result.indeterminate) {
-    return `PUBLISH BLOCKED by the agentclaw pre-publish gate.\n\n`
+    // Only offer remediation that applies. An unconfigured repo has no base
+    // branch to name, and printing "git fetch the configured base branch" as
+    // though it were a command is worse than printing nothing: it sends the
+    // reader off to fix something that is not the problem.
+    const fixes = result.notConfigured
+      ? [`  - run: /code-review init   (or: node ${skill}/scripts/install.mjs)`]
+      : [
+          `  - ${result.baseBranch} was never fetched:  git fetch ${String(result.baseBranch).replace('/', ' ')}`,
+          `  - the configured base is wrong:  fix "baseBranch" in ${CONFIG_NAME}`,
+          `  - a shallow clone:               git fetch --unshallow`,
+        ];
+    return `PUBLISH BLOCKED by the pre-publish gate.\n\n`
       + `INDETERMINATE: ${result.reason}.\n\n`
       + `This is not a finding against your change. The gate could not work out what is\n`
       + `about to ship, and refuses rather than guessing, because a gate that cannot tell\n`
       + `must not say yes.\n\n`
-      + `Usual causes and fixes:\n`
-      + `  - origin/main was never fetched:      git fetch origin main\n`
-      + `  - the remote is not named "origin":   fetch the real remote, then retry\n`
-      + `  - a shallow clone:                    git fetch --unshallow\n`;
+      + `To fix:\n${fixes.join('\n')}\n`;
   }
 
   if (result.reason) {
     parts.push(`CODE REVIEW: ${result.reason}.`);
-    // One pass, no loop. The skill reviews with Sonnet, fixes with Opus, and
-    // stamps. Fixes are not re-reviewed: the model tier is the quality control.
-    steps.push('run /code-review. It reviews the change set, fixes what it finds, re-runs the build gate, and stamps a receipt in one pass. It only escalates factual claims about pricing, dates or clients, which need your answer');
+    // One pass, no loop. The skill reviews with the mid tier, fixes with the
+    // strong one, and stamps. Fixes are not re-reviewed: the model tier is the
+    // quality control.
+    steps.push('run /code-review. It reviews the change set, fixes what it finds, re-runs the deterministic gate, and stamps a receipt in one pass. It only escalates factual claims that only you can settle');
   }
 
-  let reason = `PUBLISH BLOCKED by the agentclaw pre-publish gate.\n\n${parts.join('\n')}\n\nTo publish:\n`;
+  let reason = `PUBLISH BLOCKED by the pre-publish gate.\n\n${parts.join('\n')}\n\nTo publish:\n`;
   steps.forEach((s, i) => { reason += `  ${i + 1}. ${s}\n`; });
   reason += `  ${steps.length + 1}. retry the publish command.\n`;
   return reason;
@@ -266,13 +384,17 @@ export function formatContainerNotice(result) {
     + `Say so when reporting what you published.`;
 }
 
-// CLI mode, used by .githooks/pre-push:
+// CLI mode, used by the pre-push hook:
 //   node publish-checks.mjs      exit 0 to allow, exit 1 to refuse
 // Kept in this file rather than a separate runner so the two entry points
 // cannot drift apart.
 if (process.argv[1] && process.argv[1].endsWith('publish-checks.mjs')) {
-  const result = runChecks();
+  const dir = projectRoot();
+  const result = runChecks(dir);
   if (result.ok) {
+    if (result.disabled) {
+      process.stderr.write('\n  !! the publish gate is disabled in review.config.json. Nothing was checked.\n\n');
+    }
     if (result.waived) {
       process.stderr.write('\n  !! REVIEW WAIVED. This change set was NOT reviewed.\n');
       process.stderr.write('  !! A waiver was recorded at explicit user request.\n\n');
@@ -283,11 +405,11 @@ if (process.argv[1] && process.argv[1].endsWith('publish-checks.mjs')) {
     const containerNotice = formatContainerNotice(result);
     if (containerNotice) process.stderr.write(`\n  !! ${containerNotice}\n\n`);
     if (result.hooksInstalled === false) {
-      process.stderr.write('\n  !! core.hooksPath is not set to .githooks in this clone.\n');
-      process.stderr.write('  !! Run: pnpm install   (or: git config core.hooksPath .githooks)\n\n');
+      process.stderr.write('\n  !! no pre-push hook in this clone calls these checks.\n');
+      process.stderr.write(`  !! Run: node ${skillDir(dir)}/scripts/install.mjs\n\n`);
     }
     process.exit(0);
   }
-  process.stderr.write(formatBlock(result));
+  process.stderr.write(formatBlock(result, dir));
   process.exit(1);
 }
