@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# agentclaw pre-push hook. THE AUTHORITATIVE PUBLISH GATE.
+#
+# Git runs this on the real publish, after the shell has already resolved
+# quoting, command substitution, heredocs, aliases and escapes. It therefore
+# cannot be fooled by how the command was typed, which the PreToolUse string
+# matcher demonstrably could: three review cycles each found a new bypass
+# (command substitution inside quotes, heredoc bodies, a backslash-escaped
+# command name, ANSI-C quoting, and branch names containing an excluded
+# keyword). All of them executed for real.
+#
+# The PreToolUse hook still runs, but only as fast advisory feedback and to
+# cover `gh pr create`, which no git hook sees. This file is what decides.
+#
+# Enable once per clone (local config, not committed):
+#     git config core.hooksPath .githooks
+#
+# Bypassing requires --no-verify, which is a deliberate and visible act.
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -n "$ROOT" ] || exit 0
+
+CHECKS="$ROOT/.claude/hooks/publish-checks.mjs"
+if [ ! -f "$CHECKS" ]; then
+  echo "[pre-push] $CHECKS missing; skipping checks (fail-open)." >&2
+  exit 0
+fi
+if ! command -v node >/dev/null 2>&1; then
+  echo "[pre-push] node not found; skipping checks (fail-open)." >&2
+  exit 0
+fi
+
+CLAUDE_PROJECT_DIR="$ROOT" node "$CHECKS"
+STATUS=$?
+if [ "$STATUS" -ne 0 ]; then
+  echo "" >&2
+  echo "[pre-push] refused." >&2
+  exit 1
+fi
+exit 0

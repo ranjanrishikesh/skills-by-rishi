@@ -1,0 +1,26 @@
+{
+  "_comment": "Deterministic BLOCKING rules for the pre-publish humanizer gate (.claude/hooks/humanizer-gate.mjs). Kept DELIBERATELY SMALL: a match hard-blocks a push, so only unambiguous, validated-low-false-positive tells live here. Everything else (title case, hype words, negative parallelism, decorative emoji, en-dash-as-em, etc.) is handled with judgment by the voice rewriting pass via .claude/skills/code-review/references/voice/ai-tells-catalog.md. Each rule below was validated against the real content corpus on 2026-07-13. Regexes are JS RegExp sources; \\u escapes keep this file ASCII so it never flags itself. Optional per-rule 'dirs' narrows scope.",
+  "scanDirs": ["content", "components", "app"],
+  "scanExt": [".json", ".ts", ".tsx", ".md", ".mdx"],
+  "rules": [
+    {
+      "id": "em-dash",
+      "severity": "block",
+      "regex": "\\u2014",
+      "message": "Em-dash (U+2014) found. The flagship AI tell. Rewrite the sentence so no dash is needed (split into two sentences, or fold the aside into the main clause). Never swap it for a comma or an en-dash. (Note: en-dash in a numeric range like 9-5 is fine and is NOT flagged.)"
+    },
+    {
+      "id": "double-hyphen-dash",
+      "severity": "block",
+      "regex": "\\s--\\s",
+      "message": "Spaced double-hyphen ( -- ) used as an em-dash. Same interrupt-and-restate tell wearing a thinner mark. Rewrite so no dash is needed."
+    },
+    {
+      "id": "curly-quotes",
+      "severity": "block",
+      "dirs": ["content"],
+      "regex": "[\\u2018\\u2019\\u201C\\u201D]",
+      "message": "Curly/smart quote or apostrophe found in authored content. A paste-from-model fingerprint in a straight-quote repo. Normalize to straight ASCII (' and \"). (Scoped to content/ only; rendering components may use typographic quotes deliberately.)"
+    }
+  ]
+}
